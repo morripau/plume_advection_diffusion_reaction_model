@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.19
+# v0.19.22
 
 using Markdown
 using InteractiveUtils
@@ -11,6 +11,7 @@ using DiffEqOperators, DomainSets, OrdinaryDiffEq, DifferentialEquations, Modeli
 begin
 	SensorPlacementOpt = include("src/SensorPlacementOpt.jl")
 	SensorPlacementPlots = include("src/SensorPlacementPlots.jl")
+	PlumeModel = include("src/PlumeModel.jl")
 end
 
 # ╔═╡ c4a59c43-268e-4a2b-8ff5-be3ca2c77931
@@ -154,151 +155,61 @@ grid points and concentration notes:
 *  a cube of 22.41 [L] has dimensions 28.2 [cm] × 28.2 [cm] × 28.2 [cm]
 "
 
-# ╔═╡ d7e46d92-fee6-4088-8eb5-897c7725d955
-function toy_plume_pde(; wind_str::Float64=1.0, 
-					   diffusivity::Float64=1.0, 
-					   decay::Float64=0.0,
-					   source_loc::Tuple{Float64, Float64}=(5.0, 5.0),
-					   Δt::Float64=0.2,
-					   t_end::Float64=10.0,
-					   Δx₁=0.5,	
-					   Δx₂=0.5)
-	@parameters  x₁ x₂ t 
-
-	@variables c(..)
-
-	∂t  = Differential(t)
-	∂x₁  = Differential(x₁)
-	∂x₂  = Differential(x₂)
-	∂²x₁ = Differential(x₁) ^ 2
-	∂²x₂ = Differential(x₂) ^ 2
-
-	U = wind_str
-	D = diffusivity
-	ℓ₁ = 10.0
-	ℓ₂ = 10.0
-	λ = decay
-	c_point = 1.0
-	source_size = 0.5 #lower this to make it a point source
-
-	function gaussian_hack(x₁, 
-						   x₂; 
-						   μ₁::Float64 = source_loc[1],
-						   μ₂::Float64 = source_loc[2], 
-						   σ::Float64 = 0.0001)
-		return (exp(-((x₁-μ₁)/σ)^2.0/2.0) * exp(-((x₂-μ₂)/σ)^2.0/2.0))
-	end
-
-
-	diff_eq = [∂t(c(x₁, x₂, t)) ~ D*∂²x₁(c(x₁, x₂, t)) + D*∂²x₂(c(x₁, x₂, t))  + U*∂x₁(c(x₁, x₂, t)) - λ*c(x₁, x₂, t)]
-	
-	bcs = [
-		#initial condition
-		c(x₁, x₂, 0) ~ c_point * gaussian_hack(x₁, x₂, σ=source_size),
-		#bc's
-		∂x₁(c(ℓ₁, x₂, t)) ~ 0.0,
-		∂x₁(c(0.0, x₂, t)) ~ 0.0,
-		∂x₂(c(x₁, ℓ₂, t)) ~ 0.0,
-		∂x₂(c(x₁, 0.0, t)) ~ 0.0]
-	
-
-	# define space-time plane 
-	domains = [x₁ ∈ Interval{:closed, :closed}(0.0, ℓ₁),x₂ ∈ Interval{:closed, :closed}(0.0, ℓ₂), t ∈ Interval{:closed, :closed}(0.0, t_end), c(x₁, x₂, t) ∈ Interval{:closed, :closed}(0.0, c_point)]
-
-	# put it all together into a PDE system
-	@named pdesys = PDESystem(diff_eq, bcs, domains, [x₁, x₂, t], [c(x₁, x₂, t)]);
-
-	# discretize space [x₁=>Δx₁, x₂=>Δx₂]
-	discretization = MOLFiniteDifference([x₁=>Δx₁, x₂=>Δx₂], t)
-
-	# convert the PDE into a system of ODEs via method of lines
-	prob = discretize(pdesys, discretization)
-
-	# solve system of ODEs in time.
-	sol = solve(prob, saveat=Δt)
-	solution_grid = sol[c(x₁, x₂, t)]
-	
-	return solution_grid
-end
-
-# ╔═╡ 9e75b4c3-236f-4f48-8202-28b5227cd4ad
-function gen_heat_map!(grid::Array{Float64, 3},
-					   ax; 
-					   time_stamp::Int=10, 
-					   Δt::Float64=0.2, 
-					   Δx₁::Float64=0.5,
-					   Δx₂::Float64=0.5,
-					   color_range::Tuple{Float64, Float64}=(minimum(grid[:, :, time_stamp]), maximum(grid[:, :, time_stamp])))
-	x₁_dim = size(grid[:, :, :], 1)
-	x₂_dim = size(grid[:, :, :], 2)
-	x₁_coords = [Δx₁*i for i=1:x₁_dim]
-	x₂_coords = [Δx₂*i for i=1:x₂_dim]
-
-	hm1 = heatmap!(ax, x₁_coords, x₂_coords, grid[:, :, time_stamp], colorrange=color_range, colormap=:nipy_spectral)
-end
-
-# ╔═╡ 107a87b6-d9f1-4908-aa21-7497628afdef
-function viz_heat_map(grid::Array{Float64, 3}; 
-					  time_stamp::Int=10, 
-					  Δt::Float64=0.2, 
-					  Δx₁::Float64=0.5,
-					  Δx₂::Float64=0.5)
-	fig = Figure()
-	ax = Axis(fig[1, 1], xlabel="x₁ [position]", ylabel="x₂ [position]", xlabelsize = 22, ylabelsize=22, title="time $(Δt * time_stamp - Δt) [s]")
-	hm = gen_heat_map!(grid, ax, time_stamp=time_stamp, Δt=Δt)
-	Colorbar(fig[1, 2], hm, label="Fractional Concentration")
-
-	return fig
-end
-
-# ╔═╡ be8a89b4-5a7f-409d-806d-d405340417eb
-function truncate(n::Float64, digits::Int)
-	n = n*(10^digits)
-	n = trunc(Int, n)
-	convert(AbstractFloat, n)
-	return n/(10^digits)
-end
-
 # ╔═╡ a21ea9a8-72dd-42a7-81f6-ff820616a488
+plume_model = PlumeModel.toy_plume_pde(wind_str=1.4, 
+									   diffusivity=0.5, 
+									   source_size=0.5,
+									   plume_decay=0.0,
+									   source_decay=0.0)
+
+# ╔═╡ fe533663-8e8a-458f-896f-39ece3ef7d69
+λ
+
+# ╔═╡ 413fb2fd-5f71-4713-83f4-17dec2b0cfce
+    function truncate(n::Float64, digits::Int)
+        n = n*(10^digits)
+        n = trunc(Int, n)
+        convert(AbstractFloat, n)
+        return n/(10^digits)
+    end
+
+# ╔═╡ c464e73f-7fc7-49db-9d9e-d40bfe2bc1e1
 begin
-	plume_model = toy_plume_pde(wind_str=0.1, diffusivity=0.5)
-	#viz_heat_map(plume_model, time_stamp=1)
+function viz_heat_map(grid::Array{Float64, 3}; 
+                        time_stamp::Int=10, 
+                        Δt::Float64=0.2, 
+                        Δx₁::Float64=0.5,
+                        Δx₂::Float64=0.5,
+                        color_range::Tuple{Float64, Float64}=(minimum(grid[:, :, time_stamp]), 
+                                                              maximum(grid[:, :, time_stamp])))
+        fig = Figure()
+        ax = Axis(fig[1, 1], xlabel="x₁ [position]", ylabel="x₂ [position]", xlabelsize = 22, ylabelsize=22, title="time $(truncate(Δt * time_stamp - Δt, 2)) [s]")
+        hm = gen_heat_map!(grid, ax, time_stamp=time_stamp, Δt=Δt, color_range=color_range)
+        Colorbar(fig[1, 2], hm, label="Fractional Concentration")
+        return fig
+    end
+
+    function gen_heat_map!(grid::Array{Float64, 3},
+                            ax; 
+                            time_stamp::Int=10, 
+                            Δt::Float64=0.2, 
+                            Δx₁::Float64=0.5,
+                            Δx₂::Float64=0.5,
+                            color_range::Tuple{Float64, Float64}=(minimum(grid[:, :, time_stamp]), 
+                                                                  maximum(grid[:, :, time_stamp])))
+        x₁_dim = size(grid[:, :, :], 1)
+        x₂_dim = size(grid[:, :, :], 2)
+        x₁_coords = [Δx₁*i for i=1:x₁_dim]
+        x₂_coords = [Δx₂*i for i=1:x₂_dim]
+        hm = heatmap!(ax, x₁_coords, x₂_coords, grid[:, :, time_stamp], colorrange=color_range, colormap=:nipy_spectral)
+    end
 end
 
-# ╔═╡ f51d769d-f288-4fcf-9308-83223a3906b3
-function gen_video(grid::Array{Float64, 3}; 
-					  Δt::Float64=0.2, 
-					  n_frames::Int=50,
-					  Δx₁::Float64=0.5,
-					  Δx₂::Float64=0.5,
-					  framerate::Int=1)
-	fig = Figure()
-	ax = Axis(fig[1, 1], xlabel="x₁ [position]", ylabel="x₂ [position]", xlabelsize = 30, ylabelsize=30, title="time 0.0 [s]")
-	xlims!(1, 10)
-	ylims!(1, 10)
-
-	color_range = (minimum(grid[:, :, :]), maximum(grid[:, :, :]))
-	
-	t_end = n_frames * Δt
-	time_frame_iterator = [i for i=1:length(0.0:Δt:t_end)]
-
-	#, color_range=(minimum(grid[:, :, :]), maximum(grid[:, :, :]))
-	
-	record(fig, 
-		   "plume_diffusion.mp4", 
-		   time_frame_iterator;
-		   framerate=framerate) do frame
-				time_seconds = Δt * frame - Δt
-				ax.title = "time $(truncate(time_seconds, 2)) [s]"
-				hm = gen_heat_map!(grid, ax, time_stamp=frame, Δt=Δt, color_range=color_range)
-				if frame==1
-					Colorbar(fig[1, 2], hm, label="Fractional Concentration")
-				end
-		   end
-end
+# ╔═╡ ebba5b74-940c-4c6e-bee6-2aee95c86b7c
+viz_heat_map(plume_model, time_stamp=16, color_range=(0.0, 1.0))
 
 # ╔═╡ 9e2e6377-4d07-4af0-884f-b85e4bfff944
-gen_video(plume_model)
+PlumeModel.gen_video(plume_model, framerate=3)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -339,7 +250,7 @@ StatsBase = "~0.33.21"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.8.2"
+julia_version = "1.8.5"
 manifest_format = "2.0"
 project_hash = "b71643a2a5c5eb1f48d9b1d16cc80609393aa876"
 
@@ -639,7 +550,7 @@ version = "4.5.0"
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "0.5.2+0"
+version = "1.0.1+0"
 
 [[deps.CompositeTypes]]
 git-tree-sha1 = "02d2316b7ffceff992f3096ae48c7829a8aa0638"
@@ -2562,12 +2473,11 @@ version = "3.5.0+0"
 # ╟─fd96e05a-71f2-44cb-848a-c9a7ba0774dd
 # ╠═0f6b4ae0-f49e-4a0c-91c1-38ea14ec21ce
 # ╠═21931359-8117-4dca-acc2-ee1620219930
-# ╠═d7e46d92-fee6-4088-8eb5-897c7725d955
-# ╠═107a87b6-d9f1-4908-aa21-7497628afdef
-# ╠═9e75b4c3-236f-4f48-8202-28b5227cd4ad
-# ╠═be8a89b4-5a7f-409d-806d-d405340417eb
 # ╠═a21ea9a8-72dd-42a7-81f6-ff820616a488
-# ╠═f51d769d-f288-4fcf-9308-83223a3906b3
+# ╠═fe533663-8e8a-458f-896f-39ece3ef7d69
+# ╠═ebba5b74-940c-4c6e-bee6-2aee95c86b7c
+# ╠═c464e73f-7fc7-49db-9d9e-d40bfe2bc1e1
+# ╠═413fb2fd-5f71-4713-83f4-17dec2b0cfce
 # ╠═9e2e6377-4d07-4af0-884f-b85e4bfff944
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
