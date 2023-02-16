@@ -9,8 +9,6 @@ using DiffEqOperators, DomainSets, OrdinaryDiffEq, DifferentialEquations, Modeli
 
 # ╔═╡ 0db0c4cf-a7bb-4b1d-ae95-6c00d1b7c066
 begin
-	SensorPlacementOpt = include("src/SensorPlacementOpt.jl")
-	SensorPlacementPlots = include("src/SensorPlacementPlots.jl")
 	PlumeModel = include("src/PlumeModel.jl")
 end
 
@@ -161,9 +159,6 @@ plume_model = PlumeModel.toy_plume_pde(wind_str=1.4,
 									   source_size=0.5,
 									   plume_decay=0.0,
 									   source_decay=0.0)
-
-# ╔═╡ fe533663-8e8a-458f-896f-39ece3ef7d69
-λ
 
 # ╔═╡ 413fb2fd-5f71-4713-83f4-17dec2b0cfce
     function truncate(n::Float64, digits::Int)
@@ -2474,7 +2469,6 @@ version = "3.5.0+0"
 # ╠═0f6b4ae0-f49e-4a0c-91c1-38ea14ec21ce
 # ╠═21931359-8117-4dca-acc2-ee1620219930
 # ╠═a21ea9a8-72dd-42a7-81f6-ff820616a488
-# ╠═fe533663-8e8a-458f-896f-39ece3ef7d69
 # ╠═ebba5b74-940c-4c6e-bee6-2aee95c86b7c
 # ╠═c464e73f-7fc7-49db-9d9e-d40bfe2bc1e1
 # ╠═413fb2fd-5f71-4713-83f4-17dec2b0cfce
